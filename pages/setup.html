@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Server Setup – CertifyChain</title>
+  <link rel="stylesheet" href="../css/style.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <style>
+    body { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:2rem; }
+    .setup-card { background:var(--panel); border:1px solid var(--border); border-radius:20px; padding:2.5rem; max-width:560px; width:100%; position:relative; z-index:1; }
+    .setup-logo { display:flex; align-items:center; gap:8px; font-family:var(--font-head); font-size:1.2rem; font-weight:700; margin-bottom:2rem; }
+    .setup-logo i { color:var(--accent); font-size:1.5rem; }
+    h2 { font-family:var(--font-head); font-size:1.5rem; font-weight:700; margin-bottom:.4rem; }
+    .sub { color:var(--muted); font-size:.9rem; margin-bottom:2rem; line-height:1.6; }
+    .step { display:flex; gap:14px; align-items:flex-start; padding:1rem; border:1px solid var(--border); border-radius:12px; margin-bottom:.75rem; background:rgba(255,255,255,.02); }
+    .step-num { width:30px; height:30px; border-radius:50%; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:.85rem; flex-shrink:0; }
+    .step h3 { font-size:.9rem; font-weight:600; margin-bottom:.3rem; }
+    .step p { color:var(--muted); font-size:.83rem; line-height:1.5; }
+    .code { font-family:monospace; font-size:.83rem; background:rgba(67,97,238,.1); color:var(--accent); padding:.4rem .8rem; border-radius:6px; display:inline-block; margin-top:.4rem; }
+    .status-box { border-radius:12px; padding:1rem 1.25rem; margin-bottom:1.5rem; }
+    .status-box.ok { background:rgba(6,214,160,.08); border:1px solid rgba(6,214,160,.25); }
+    .status-box.fail { background:rgba(239,35,60,.08); border:1px solid rgba(239,35,60,.25); }
+    .go-btn { width:100%; padding:.85rem; background:var(--accent); color:#fff; border:none; border-radius:10px; font-family:var(--font-head); font-size:1rem; font-weight:600; cursor:pointer; margin-top:1rem; transition:all .2s; }
+    .go-btn:hover { background:#3251d4; transform:translateY(-1px); }
+    .go-btn:disabled { opacity:.5; cursor:not-allowed; transform:none; }
+  </style>
+</head>
+<body>
+  <div class="grid-bg"></div>
+  <div class="glow-orb orb1"></div>
+
+  <div class="setup-card">
+    <div class="setup-logo"><i class="ti ti-certificate"></i><span>CertifyChain</span></div>
+    <h2>🔧 Server Setup</h2>
+    <p class="sub">To enable AI certificate analysis, the local proxy server must be running with your Anthropic API key.</p>
+
+    <div id="status-box" class="status-box fail">
+      <div style="display:flex;align-items:center;gap:8px;font-size:.9rem;font-weight:500" id="status-text">
+        <i class="ti ti-circle-x" style="color:var(--danger)"></i> Checking server status...
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div>
+        <h3>Download Node.js</h3>
+        <p>If not installed, download from <a href="https://nodejs.org" target="_blank" style="color:var(--accent)">nodejs.org</a> (LTS version)</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div>
+        <h3>Get Anthropic API Key</h3>
+        <p>Go to <a href="https://console.anthropic.com" target="_blank" style="color:var(--accent)">console.anthropic.com</a> → API Keys → Create Key (starts with sk-ant-...)</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div>
+        <h3>Open terminal in project folder</h3>
+        <p>Windows: Right-click in folder → "Open in Terminal"<br>Or: Win+R → cmd → cd path/to/certifychain</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div>
+        <h3>Run the server</h3>
+        <p>Type this command and press Enter:</p>
+        <span class="code">node server.js</span>
+        <p style="margin-top:.4rem">It will ask for your API key — paste it and press Enter</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">5</div>
+      <div>
+        <h3>Open in browser</h3>
+        <p>Visit: <span class="code">http://localhost:3000</span></p>
+      </div>
+    </div>
+
+    <button class="go-btn" id="go-btn" onclick="goToDashboard()" disabled>
+      <i class="ti ti-arrow-right"></i> Go to Dashboard
+    </button>
+  </div>
+
+  <script>
+    async function checkStatus() {
+      const box  = document.getElementById('status-box');
+      const txt  = document.getElementById('status-text');
+      const btn  = document.getElementById('go-btn');
+      try {
+        const r = await fetch('/api/status');
+        const d = await r.json();
+        if (d.ok && d.hasKey) {
+          box.className = 'status-box ok';
+          txt.innerHTML = '<i class="ti ti-circle-check" style="color:var(--success)"></i> <span style="color:var(--success)">Server running ✓ — API key configured ✓</span>';
+          btn.disabled = false;
+          btn.textContent = '✓ Go to Dashboard';
+        } else if (d.ok && !d.hasKey) {
+          box.className = 'status-box fail';
+          txt.innerHTML = '<i class="ti ti-alert-circle" style="color:var(--warn)"></i> <span style="color:var(--warn)">Server running but API key missing — restart server.js</span>';
+        }
+      } catch(e) {
+        box.className = 'status-box fail';
+        txt.innerHTML = '<i class="ti ti-circle-x" style="color:var(--danger)"></i> <span style="color:var(--danger)">Server not running — run: node server.js</span>';
+      }
+    }
+    function goToDashboard() { window.location.href = 'dashboard.html'; }
+    checkStatus();
+    setInterval(checkStatus, 3000); // re-check every 3s
+  </script>
+</body>
+</html>

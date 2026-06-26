@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Background circle -->
+  <circle cx="32" cy="32" r="32" fill="#4361ee"/>
+
+  <!-- Certificate shape -->
+  <rect x="14" y="16" width="36" height="28" rx="3" fill="white" opacity="0.95"/>
+
+  <!-- Lines representing text -->
+  <rect x="20" y="23" width="24" height="2.5" rx="1.2" fill="#4361ee" opacity="0.7"/>
+  <rect x="20" y="28" width="18" height="2" rx="1" fill="#4361ee" opacity="0.4"/>
+  <rect x="20" y="32" width="20" height="2" rx="1" fill="#4361ee" opacity="0.4"/>
+
+  <!-- Seal / stamp circle at bottom right of cert -->
+  <circle cx="40" cy="37" r="5" fill="#f72585" opacity="0.9"/>
+  <circle cx="40" cy="37" r="3.5" fill="none" stroke="white" stroke-width="1"/>
+
+  <!-- Ribbon at bottom -->
+  <path d="M26 44 L32 48 L38 44" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>404 – Page Not Found | CertifyChain</title>
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css"/>
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; text-align: center; padding: 2rem; }
+    .err-wrap { position: relative; z-index: 1; max-width: 480px; }
+    .err-code { font-family: var(--font-head); font-size: 7rem; font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      line-height: 1; margin-bottom: .5rem; }
+    .err-icon { font-size: 3rem; color: var(--muted); display: block; margin-bottom: 1rem; }
+    .err-title { font-family: var(--font-head); font-size: 1.5rem; font-weight: 700; margin-bottom: .75rem; }
+    .err-desc  { color: var(--muted); font-size: .95rem; line-height: 1.7; margin-bottom: 2rem; }
+    .err-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <div class="grid-bg"></div>
+  <div class="glow-orb orb1"></div>
+  <div class="glow-orb orb2"></div>
+
+  <div class="err-wrap">
+    <div class="err-code">404</div>
+    <i class="ti ti-map-off err-icon"></i>
+    <h1 class="err-title">Page Not Found</h1>
+    <p class="err-desc">
+      The page you're looking for doesn't exist or has been moved.
+      Let's get you back on track.
+    </p>
+    <div class="err-actions">
+      <a href="index.html" class="btn btn-primary">
+        <i class="ti ti-home"></i> Go Home
+      </a>
+      <a href="pages/login.html" class="btn btn-ghost">
+        <i class="ti ti-login"></i> Login
+      </a>
+    </div>
+  </div>
+</body>
+</html>
