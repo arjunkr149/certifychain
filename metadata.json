@@ -1,0 +1,8 @@
+{
+  "name": "CertifyChain",
+  "description": "Decentralized certificate verification and issuance platform powered by blockchain hash chaining and AI fraud detection.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
