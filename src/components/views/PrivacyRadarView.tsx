@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 
 export const PrivacyRadarView: React.FC = () => {
-  const { privacySummary, runPrivacyScan, remediatePrivacyLeaks, remediationApplied } = useApp();
+  const { privacySummary, runPrivacyScan, remediatePrivacyLeaks, remediationApplied, setPage } = useApp();
   const [testingCustomString, setTestingCustomString] = useState('');
   const [customTestResult, setCustomTestResult] = useState<{
     hasLeak: boolean;
@@ -87,6 +87,13 @@ export const PrivacyRadarView: React.FC = () => {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setPage('data-minimization')}
+            className="btn btn-ghost"
+            style={{ borderColor: 'var(--success)', color: 'var(--success)' }}
+          >
+            <i className="ti ti-filter-check"></i> Scoped Policy Engine
+          </button>
           {!remediationApplied && privacySummary.piiExposureCount > 0 && (
             <button
               onClick={remediatePrivacyLeaks}

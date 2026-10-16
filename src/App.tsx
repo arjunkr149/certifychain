@@ -7,13 +7,15 @@ import { Toast } from './components/Toast';
 import { BlockDetailModal } from './components/BlockDetailModal';
 
 export const App: React.FC = () => {
-  const { page } = useApp();
+  const { page, user } = useApp();
+
+  const isAdminOnlyPage = !user && (page === 'dashboard' || page === 'issue' || page === 'profile');
 
   return (
     <>
       {page === 'home' && <LandingPage />}
-      {page === 'login' && <AuthPage />}
-      {page !== 'home' && page !== 'login' && <DashboardLayout />}
+      {(page === 'login' || isAdminOnlyPage) && <AuthPage />}
+      {!isAdminOnlyPage && page !== 'home' && page !== 'login' && <DashboardLayout />}
 
       <Toast />
       <BlockDetailModal />

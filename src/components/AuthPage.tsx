@@ -140,6 +140,17 @@ export const AuthPage: React.FC = () => {
                 <i className="ti ti-login"></i> Login to Dashboard
               </button>
 
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ width: '100%', marginTop: '0.6rem', justifyContent: 'center', borderColor: 'var(--border)' }}
+                onClick={() => {
+                  login('admin', 'admin123');
+                }}
+              >
+                <i className="ti ti-bolt" style={{ color: 'var(--accent)' }}></i> 1-Click Demo Admin Sign-In
+              </button>
+
               <p className="auth-switch">
                 Don't have an account?{' '}
                 <a
@@ -152,6 +163,17 @@ export const AuthPage: React.FC = () => {
                   Sign up here
                 </a>
               </p>
+
+              <div style={{ textAlign: 'center', marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+                <button
+                  type="button"
+                  onClick={() => setPage('verify')}
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: '0.82rem', color: 'var(--accent)' }}
+                >
+                  <i className="ti ti-shield-check"></i> Continue as Public Guest to Verify Certificates
+                </button>
+              </div>
             </form>
           ) : (
             <form onSubmit={handleSignupSubmit} className="auth-form">

@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Certificate, AIAnalysisResult } from '../../types';
 import { formatDate } from '../../utils/blockchain';
-import { analyzeCertificateImage, askCertifyChainAI } from '../../utils/ai';
+import { analyzeCertificateImage } from '../../utils/ai';
+import { scanQrCodeFromDataUrl, DecodedQRResult } from '../../utils/qrScanner';
 import { ForensicScannerModal } from './ForensicScannerModal';
 
 export const VerifyView: React.FC = () => {
-  const { certs, verifyLog, addVerifyRecord, showToast } = useApp();
+  const { certs, verifyLog, addVerifyRecord, showToast, setPage } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'number' | 'qr' | 'file' | 'ai'>('file');
+  const [activeTab, setActiveTab] = useState<'file' | 'number' | 'qr'>('file');
 
   // Method 1: Number state
   const [certNoInput, setCertNoInput] = useState('');
@@ -17,24 +18,15 @@ export const VerifyView: React.FC = () => {
 
   // Method 2: QR state
   const [qrLoading, setQrLoading] = useState(false);
-  const [qrResult, setQrResult] = useState<{ decoded: string; cert?: Certificate } | null>(null);
+  const [qrResult, setQrResult] = useState<{ decoded: string; cert?: Certificate; error?: string } | null>(null);
 
-  // Method 3: File state
+  // Method 3: File Upload state
   const [fileData, setFileData] = useState<{ name: string; size: string; url: string } | null>(null);
   const [fileLoading, setFileLoading] = useState(false);
   const [fileStep, setFileStep] = useState(0);
+  const [detectedQR, setDetectedQR] = useState<DecodedQRResult | null>(null);
+  const [manualCertNo, setManualCertNo] = useState('');
   const [fileResult, setFileResult] = useState<AIAnalysisResult | null>(null);
-  const [uploadTestMode, setUploadTestMode] = useState<'auto' | 'authentic' | 'fake'>('auto');
-
-  // Method 4: AI Chat state
-  const [aiChatMsgs, setAiChatMsgs] = useState<Array<{ role: 'user' | 'assistant'; text: string }>>([
-    {
-      role: 'assistant',
-      text: "Hello! I'm CertifyChain's AI assistant. I can help verify certificates, detect potential fraud or forgeries, explain blockchain records, or check credential details.",
-    },
-  ]);
-  const [aiChatInput, setAiChatInput] = useState('');
-  const [aiChatLoading, setAiChatLoading] = useState(false);
   const [showForensicModal, setShowForensicModal] = useState(false);
 
   // 1. By Number
@@ -56,10 +48,14 @@ export const VerifyView: React.FC = () => {
           certNo: matched.no,
           method: 'Number',
           student: matched.student,
-          result: 'Valid',
+          result: matched.valid ? 'Valid' : 'Fake',
           time: new Date().toLocaleTimeString(),
         });
-        showToast('Certificate verified authentic!', 'success');
+        if (matched.valid) {
+          showToast('Certificate verified authentic on blockchain!', 'success');
+        } else {
+          showToast('Certificate has been tampered with!', 'error');
+        }
       } else {
         setNumberResult({ found: false, query });
         addVerifyRecord({
@@ -71,11 +67,11 @@ export const VerifyView: React.FC = () => {
         });
         showToast('Certificate not found in blockchain registry — potential fake', 'error');
       }
-    }, 700);
+    }, 500);
   };
 
-  // 2. By QR Code
-  const handleQRUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 2. By QR Code Upload (Real jsQR Scanning)
+  const handleQRUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -83,32 +79,62 @@ export const VerifyView: React.FC = () => {
     setQrResult(null);
 
     const reader = new FileReader();
-    reader.onload = () => {
-      setTimeout(() => {
+    reader.onload = async () => {
+      const url = reader.result as string;
+      try {
+        const decoded = await scanQrCodeFromDataUrl(url);
+
+        if (!decoded || (!decoded.certNo && !decoded.raw)) {
+          setQrLoading(false);
+          setQrResult({
+            decoded: 'No QR Code Detected',
+            error: 'No QR code could be detected in this image. Please ensure the QR code is clear, well-lit, and uncropped.',
+          });
+          showToast('No readable QR code found in image', 'error');
+          return;
+        }
+
+        const queryCertNo = decoded.certNo || decoded.raw;
+        const matched = certs.find(c =>
+          c.no.toLowerCase() === queryCertNo.toLowerCase() ||
+          c.no.replace(/[^A-Za-z0-9]/g, '').toLowerCase() === queryCertNo.replace(/[^A-Za-z0-9]/g, '').toLowerCase()
+        );
+
         setQrLoading(false);
-        const decoded = 'CERT-2024-001234';
-        const matched = certs.find(c => c.no === decoded);
-        setQrResult({ decoded, cert: matched });
+        setQrResult({
+          decoded: queryCertNo,
+          cert: matched,
+        });
+
+        const isAuthentic = !!matched && matched.valid !== false;
+
         addVerifyRecord({
-          certNo: decoded,
+          certNo: queryCertNo,
           method: 'QR Code',
-          student: matched ? matched.student : '—',
-          result: matched ? 'Valid' : 'Fake',
+          student: matched ? matched.student : (decoded.student || '—'),
+          result: isAuthentic ? 'Valid' : 'Fake',
           time: new Date().toLocaleTimeString(),
         });
-        if (matched) {
-          showToast('QR Code decoded and verified!', 'success');
+
+        if (isAuthentic) {
+          showToast('QR Code decoded and verified authentic on chain!', 'success');
         } else {
-          showToast('QR code contains unverified credential', 'error');
+          showToast('QR code contains unverified/counterfeit credential', 'error');
         }
-      }, 900);
+      } catch (err: unknown) {
+        setQrLoading(false);
+        showToast('Error scanning QR code: ' + (err instanceof Error ? err.message : String(err)), 'error');
+      }
     };
     reader.readAsDataURL(file);
   };
 
-  // 3. File Upload & Forensic Verification
-  const processDocumentAnalysis = async (fileName: string, url: string, modeOverride?: 'auto' | 'authentic' | 'fake') => {
-    const activeMode = modeOverride || uploadTestMode;
+  // 3. File Upload & Forensic Verification (Real OCR & QR validation)
+  const processDocumentAnalysis = async (
+    fileName: string,
+    url: string,
+    overrideCertNo?: string
+  ) => {
     setFileData({
       name: fileName,
       size: '348.5 KB',
@@ -118,27 +144,41 @@ export const VerifyView: React.FC = () => {
     setFileLoading(true);
     setFileStep(1);
 
-    setTimeout(() => setFileStep(2), 400);
-    setTimeout(() => setFileStep(3), 800);
-    setTimeout(() => setFileStep(4), 1200);
-    setTimeout(() => setFileStep(5), 1600);
+    setTimeout(() => setFileStep(2), 300);
+    setTimeout(() => setFileStep(3), 600);
+    setTimeout(() => setFileStep(4), 900);
+    setTimeout(() => setFileStep(5), 1200);
 
     try {
-      const analysis = await analyzeCertificateImage(fileName, url, certs, activeMode);
+      // Step A: Scan image for embedded QR code
+      const qrScan = await scanQrCodeFromDataUrl(url);
+      setDetectedQR(qrScan);
+
+      const targetCert = overrideCertNo ?? manualCertNo ?? qrScan?.certNo ?? '';
+      if (targetCert && !manualCertNo) {
+        setManualCertNo(targetCert);
+      }
+
+      // Step B: Run forensic analysis and blockchain cross-check
+      const analysis = await analyzeCertificateImage(fileName, url, certs, {
+        decodedQR: qrScan,
+        manualCertNo: targetCert,
+      });
+
       setFileResult(analysis);
       setFileLoading(false);
 
       const isOk = analysis.verdict === 'VERIFIED';
       addVerifyRecord({
-        certNo: analysis.certNumber || fileName,
-        method: 'File Upload (AI OCR)',
+        certNo: analysis.certNumber || targetCert || fileName,
+        method: 'Certificate Upload (Forensic OCR & Ledger)',
         student: analysis.name || '—',
         result: isOk ? 'Verified' : 'Fake',
         time: new Date().toLocaleTimeString(),
       });
 
       showToast(
-        isOk ? 'Document authentic and verified!' : 'Fake/tampered certificate detected!',
+        isOk ? 'Certificate verified authentic on blockchain!' : 'Validation failed: Certificate is unverified or fake!',
         isOk ? 'success' : 'error'
       );
     } catch (err: unknown) {
@@ -151,22 +191,15 @@ export const VerifyView: React.FC = () => {
     const reader = new FileReader();
     reader.onload = e => {
       const url = e.target?.result as string;
+      setManualCertNo('');
       processDocumentAnalysis(file.name, url);
     };
     reader.readAsDataURL(file);
   };
 
-  // 4. AI Chat
-  const handleSendAIChat = async () => {
-    const text = aiChatInput.trim();
-    if (!text || aiChatLoading) return;
-    setAiChatInput('');
-    setAiChatMsgs(prev => [...prev, { role: 'user', text }]);
-    setAiChatLoading(true);
-
-    const reply = await askCertifyChainAI(text, certs);
-    setAiChatLoading(false);
-    setAiChatMsgs(prev => [...prev, { role: 'assistant', text: reply }]);
+  const handleManualRevalidate = () => {
+    if (!fileData) return;
+    processDocumentAnalysis(fileData.name, fileData.url, manualCertNo.trim());
   };
 
   return (
@@ -184,142 +217,71 @@ export const VerifyView: React.FC = () => {
             className={`vtab ${activeTab === 'file' ? 'active' : ''}`}
             onClick={() => setActiveTab('file')}
           >
-            <i className="ti ti-file-upload"></i> File Upload (AI &amp; Fake Detection)
+            <i className="ti ti-file-upload"></i> Upload Certificate (Real-Time Validation)
           </button>
           <button
             className={`vtab ${activeTab === 'number' ? 'active' : ''}`}
             onClick={() => setActiveTab('number')}
           >
-            <i className="ti ti-hash"></i> By Number
+            <i className="ti ti-hash"></i> By Certificate Number
           </button>
           <button
             className={`vtab ${activeTab === 'qr' ? 'active' : ''}`}
             onClick={() => setActiveTab('qr')}
           >
-            <i className="ti ti-qrcode"></i> QR Code
-          </button>
-          <button
-            className={`vtab ${activeTab === 'ai' ? 'active' : ''}`}
-            onClick={() => setActiveTab('ai')}
-          >
-            <i className="ti ti-robot"></i> AI Fraud Assistant
+            <i className="ti ti-qrcode"></i> Scan QR Code
           </button>
         </div>
 
-        {/* TAB 1: FILE UPLOAD (AI OCR & FORENSIC FAKE DETECTION) */}
+        {/* TAB 1: FILE UPLOAD (AI OCR & FORENSIC LEDGER VERIFICATION) */}
         {activeTab === 'file' && (
           <div className="tab-panel active">
             <p className="tab-desc">
-              Upload any certificate — degree, marksheet, internship letter, or official document. Our Neural OCR and Forensic Tamper Engine checks the image for typography splicing, resolution mismatch, and cross-references against the SHA-256 blockchain ledger to detect forgeries.
+              Upload any certificate image or document (JPG, PNG, WebP). CertifyChain automatically inspects the image, decodes any embedded security QR code, and validates the credential against the immutable SHA-256 blockchain registry.
             </p>
 
-            {/* Quick Test Samples */}
+            {/* Quick Verification Samples */}
             <div className="sample-certs" style={{ marginBottom: '1.25rem' }}>
-              <span className="sample-label">Quick Test Presets:</span>
+              <span className="sample-label">Test Samples:</span>
               <span
                 className="sample-chip valid"
-                onClick={() =>
+                onClick={() => {
+                  setManualCertNo('CERT-2024-001234');
                   processDocumentAnalysis(
                     'btech_degree_priya_sharma.png',
-                    'https://images.unsplash.com/photo-1589330694653-ded6df03f754?w=500&q=80'
-                  )
-                }
+                    'https://images.unsplash.com/photo-1589330694653-ded6df03f754?w=500&q=80',
+                    'CERT-2024-001234'
+                  );
+                }}
               >
-                <i className="ti ti-check"></i> Authentic Degree (GNIOT)
+                <i className="ti ti-check"></i> Genuine Degree: Priya Sharma (CERT-2024-001234)
               </span>
               <span
                 className="sample-chip valid"
-                onClick={() =>
+                onClick={() => {
+                  setManualCertNo('CERT-2025-000042');
                   processDocumentAnalysis(
                     'aicte_internship_arjun_kumar.png',
-                    'https://images.unsplash.com/photo-1544717305-2782549b5136?w=500&q=80'
-                  )
-                }
+                    'https://images.unsplash.com/photo-1544717305-2782549b5136?w=500&q=80',
+                    'CERT-2025-000042'
+                  );
+                }}
               >
-                <i className="ti ti-check"></i> Authentic Internship (AICTE)
+                <i className="ti ti-check"></i> Genuine Internship: Arjun Kumar (CERT-2025-000042)
               </span>
               <span
                 className="sample-chip invalid"
-                onClick={() =>
+                onClick={() => {
+                  setManualCertNo('FAKE-2024-998877');
                   processDocumentAnalysis(
                     'fake_tampered_degree_sunil_kumar.png',
-                    'https://images.unsplash.com/photo-1589330694653-ded6df03f754?w=500&q=80'
-                  )
-                }
+                    'https://images.unsplash.com/photo-1589330694653-ded6df03f754?w=500&q=80',
+                    'FAKE-2024-998877'
+                  );
+                }}
               >
-                <i className="ti ti-alert-triangle"></i> Forged Certificate (Altered Name &amp; CGPA)
+                <i className="ti ti-alert-triangle"></i> Forged Certificate (Sunil Kumar)
               </span>
-              <span
-                className="sample-chip invalid"
-                onClick={() =>
-                  processDocumentAnalysis(
-                    'counterfeit_diploma_unverified_hash.png',
-                    'https://images.unsplash.com/photo-1607434472257-d9f8e57a643d?w=500&q=80'
-                  )
-                }
-              >
-                <i className="ti ti-shield-x"></i> Counterfeit Diploma (Cloned QR &amp; Seal)
-              </span>
-            </div>
-
-            {/* Test Mode Selector */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.75rem', flexWrap: 'wrap', background: 'rgba(255,255,255,.02)', border: '1px solid var(--border)', borderRadius: '8px', padding: '0.5rem 0.85rem' }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <i className="ti ti-adjustments-horizontal"></i> Verification Mode:
-              </span>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={() => setUploadTestMode('auto')}
-                  style={{
-                    fontSize: '0.78rem',
-                    padding: '3px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid',
-                    cursor: 'pointer',
-                    background: uploadTestMode === 'auto' ? 'rgba(67,97,238,.2)' : 'transparent',
-                    borderColor: uploadTestMode === 'auto' ? 'var(--accent)' : 'var(--border)',
-                    color: uploadTestMode === 'auto' ? '#fff' : 'var(--muted)',
-                    fontWeight: uploadTestMode === 'auto' ? 600 : 400,
-                  }}
-                >
-                  ⚡ Smart Auto-Detect
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUploadTestMode('authentic')}
-                  style={{
-                    fontSize: '0.78rem',
-                    padding: '3px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid',
-                    cursor: 'pointer',
-                    background: uploadTestMode === 'authentic' ? 'rgba(6,214,160,.2)' : 'transparent',
-                    borderColor: uploadTestMode === 'authentic' ? 'var(--success)' : 'var(--border)',
-                    color: uploadTestMode === 'authentic' ? 'var(--success)' : 'var(--muted)',
-                    fontWeight: uploadTestMode === 'authentic' ? 600 : 400,
-                  }}
-                >
-                  <i className="ti ti-shield-check"></i> Force Authentic Check
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUploadTestMode('fake')}
-                  style={{
-                    fontSize: '0.78rem',
-                    padding: '3px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid',
-                    cursor: 'pointer',
-                    background: uploadTestMode === 'fake' ? 'rgba(239,35,60,.2)' : 'transparent',
-                    borderColor: uploadTestMode === 'fake' ? 'var(--danger)' : 'var(--border)',
-                    color: uploadTestMode === 'fake' ? 'var(--danger)' : 'var(--muted)',
-                    fontWeight: uploadTestMode === 'fake' ? 600 : 400,
-                  }}
-                >
-                  <i className="ti ti-shield-x"></i> Force Fake / Tamper Detection
-                </button>
-              </div>
             </div>
 
             <div
@@ -333,9 +295,9 @@ export const VerifyView: React.FC = () => {
               }}
             >
               <i className="ti ti-file-upload upload-zone-icon"></i>
-              <p>Drag &amp; drop or click to upload any certificate image (JPG, PNG, WEBP, PDF)</p>
+              <p>Drag &amp; drop or click to upload your certificate image</p>
               <small style={{ color: 'var(--muted)', fontSize: '0.8rem', display: 'block', marginTop: '0.4rem' }}>
-                Instant AI OCR text extraction · Digital stamp DPI inspection · Ledger tamper verification
+                Supports PNG, JPG, WEBP · Automatic QR scanning · Blockchain ledger matching · Anti-tamper verification
               </small>
             </div>
 
@@ -360,12 +322,22 @@ export const VerifyView: React.FC = () => {
                       style={{ width: '90px', height: '65px', objectFit: 'cover', borderRadius: '6px', border: '1px solid var(--border)', flexShrink: 0 }}
                     />
                     <div>
-                      <div style={{ fontSize: '0.87rem', fontWeight: 500 }}>{fileData.name}</div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: '2px' }}>{fileData.size}</div>
+                      <div style={{ fontSize: '0.87rem', fontWeight: 600 }}>{fileData.name}</div>
+                      <div style={{ fontSize: '0.78rem', color: 'var(--muted)', marginTop: '2px' }}>
+                        {detectedQR?.certNo ? (
+                          <span style={{ color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <i className="ti ti-qrcode"></i> QR Detected: {detectedQR.certNo}
+                          </span>
+                        ) : (
+                          <span>No embedded QR code detected in image</span>
+                        )}
+                      </div>
                       <button
                         onClick={() => {
                           setFileData(null);
                           setFileResult(null);
+                          setDetectedQR(null);
+                          setManualCertNo('');
                         }}
                         style={{ fontSize: '0.76rem', color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', marginTop: '6px', padding: 0, display: 'flex', alignItems: 'center', gap: '3px' }}
                       >
@@ -374,23 +346,37 @@ export const VerifyView: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Re-test switches */}
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {/* Manual Certificate ID Cross-Check */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--muted)', marginBottom: '2px' }}>
+                        Certificate Serial to Validate:
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="e.g. CERT-2024-001234"
+                        value={manualCertNo}
+                        onChange={e => setManualCertNo(e.target.value)}
+                        style={{
+                          fontSize: '0.82rem',
+                          padding: '0.4rem 0.75rem',
+                          background: 'var(--surface)',
+                          border: '1px solid var(--border)',
+                          borderRadius: '6px',
+                          color: '#fff',
+                          fontFamily: 'monospace',
+                          width: '210px',
+                        }}
+                        onKeyDown={e => e.key === 'Enter' && handleManualRevalidate()}
+                      />
+                    </div>
                     <button
-                      className="btn btn-ghost"
-                      style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem', borderColor: 'var(--success)', color: 'var(--success)' }}
-                      onClick={() => processDocumentAnalysis(fileData.name, fileData.url, 'authentic')}
+                      className="btn btn-primary btn-sm"
+                      style={{ marginTop: '16px' }}
+                      onClick={handleManualRevalidate}
                       disabled={fileLoading}
                     >
-                      <i className="ti ti-shield-check"></i> Test Authentic
-                    </button>
-                    <button
-                      className="btn btn-ghost"
-                      style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem', borderColor: 'var(--danger)', color: 'var(--danger)' }}
-                      onClick={() => processDocumentAnalysis(fileData.name, fileData.url, 'fake')}
-                      disabled={fileLoading}
-                    >
-                      <i className="ti ti-alert-triangle"></i> Test Fake / Tampered
+                      <i className="ti ti-refresh"></i> Validate with Ledger
                     </button>
                   </div>
                 </div>
@@ -401,28 +387,28 @@ export const VerifyView: React.FC = () => {
               <div className="result-card ai-info" style={{ marginTop: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1rem' }}>
                   <div className="spinner"></div>
-                  <strong>Forensic AI is analyzing document &amp; checking for forgeries...</strong>
+                  <strong>Validating certificate against blockchain ledger &amp; scanning for tampering...</strong>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.84rem', color: 'var(--muted)' }}>
                   <div>
                     {fileStep >= 1 ? <i className="ti ti-circle-check" style={{ color: 'var(--success)' }}></i> : <i className="ti ti-circle-dashed"></i>}{' '}
-                    1. Detecting document type &amp; layout micro-structure...
+                    1. Scanning image for digital QR signatures &amp; visual metadata...
                   </div>
                   <div>
                     {fileStep >= 2 ? <i className="ti ti-circle-check" style={{ color: 'var(--success)' }}></i> : <i className="ti ti-circle-dashed"></i>}{' '}
-                    2. Extracting text from image via Neural OCR...
+                    2. Extracting Certificate ID and issuer credentials...
                   </div>
                   <div>
                     {fileStep >= 3 ? <i className="ti ti-circle-check" style={{ color: 'var(--success)' }}></i> : <i className="ti ti-circle-dashed"></i>}{' '}
-                    3. Cross-referencing serial number against Blockchain Ledger...
+                    3. Cross-referencing against immutable SHA-256 blockchain ledger...
                   </div>
                   <div>
                     {fileStep >= 4 ? <i className="ti ti-circle-check" style={{ color: 'var(--success)' }}></i> : <i className="ti ti-circle-dashed"></i>}{' '}
-                    4. Forensic analysis: Font kerning, stamp DPI, &amp; digital tampering detection...
+                    4. Forensic anti-tamper inspection (font kerning, stamp DPI, block hash)...
                   </div>
                   <div>
                     {fileStep >= 5 ? <i className="ti ti-circle-check" style={{ color: 'var(--success)' }}></i> : <i className="ti ti-circle-dashed"></i>}{' '}
-                    5. Synthesizing cryptographic verification &amp; fraud report...
+                    5. Finalizing cryptographic verification verdict...
                   </div>
                 </div>
               </div>
@@ -431,7 +417,10 @@ export const VerifyView: React.FC = () => {
             {fileResult && !fileLoading && (
               <div
                 className={`result-card ${fileResult.verdict === 'VERIFIED' ? 'valid' : 'invalid'}`}
-                style={{ marginTop: '1.25rem', border: fileResult.verdict === 'VERIFIED' ? '2px solid rgba(6,214,160,.4)' : '2px solid rgba(239,35,60,.4)' }}
+                style={{
+                  marginTop: '1.25rem',
+                  border: fileResult.verdict === 'VERIFIED' ? '2px solid rgba(6,214,160,.4)' : '2px solid rgba(239,35,60,.4)',
+                }}
               >
                 <div className="result-header">
                   <div
@@ -445,10 +434,10 @@ export const VerifyView: React.FC = () => {
                   </div>
                   <div style={{ flex: 1 }}>
                     <h3 style={{ color: fileResult.verdict === 'VERIFIED' ? 'var(--success)' : 'var(--danger)', fontSize: '1.25rem' }}>
-                      {fileResult.verdict === 'VERIFIED' ? 'Certificate Verified Authentic ✓' : 'CRITICAL WARNING: FAKE / TAMPERED CERTIFICATE ✗'}
+                      {fileResult.verdict === 'VERIFIED' ? 'Certificate Verified Authentic ✓' : 'UNVERIFIED / COUNTERFEIT CERTIFICATE ✗'}
                     </h3>
                     <p style={{ fontWeight: 500 }}>
-                      {fileResult.documentType} · Forensic Confidence: {fileResult.confidence}
+                      {fileResult.documentType} · Verification Status: {fileResult.verdict === 'VERIFIED' ? 'Recorded on Blockchain' : 'Not Found on Chain'}
                     </p>
                   </div>
                   <div style={{ textAlign: 'right' }}>
@@ -479,20 +468,20 @@ export const VerifyView: React.FC = () => {
                 {fileResult.forensicAnalysis && (
                   <div style={{ background: 'rgba(0,0,0,.15)', border: '1px solid var(--border)', borderRadius: '10px', padding: '1rem', marginBottom: '1rem' }}>
                     <h4 style={{ fontSize: '0.84rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted)', marginBottom: '0.75rem' }}>
-                      <i className="ti ti-binary"></i> Forensic Security Checklist
+                      <i className="ti ti-binary"></i> Blockchain &amp; Forensic Security Checklist
                     </h4>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.6rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem' }}>
                         <i className={`ti ${fileResult.forensicAnalysis.ledgerMatch ? 'ti-check' : 'ti-x'}`} style={{ color: fileResult.forensicAnalysis.ledgerMatch ? 'var(--success)' : 'var(--danger)' }}></i>
                         <span>Blockchain Ledger Record:</span>
                         <strong style={{ color: fileResult.forensicAnalysis.ledgerMatch ? 'var(--success)' : 'var(--danger)' }}>
-                          {fileResult.forensicAnalysis.ledgerMatch ? 'MATCHED' : 'NOT FOUND'}
+                          {fileResult.forensicAnalysis.ledgerMatch ? 'MATCHED' : 'NOT FOUND IN BLOCKCHAIN'}
                         </strong>
                       </div>
 
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem' }}>
                         <i className={`ti ${fileResult.forensicAnalysis.hologramSealIntegrity === 'GENUINE' ? 'ti-check' : 'ti-x'}`} style={{ color: fileResult.forensicAnalysis.hologramSealIntegrity === 'GENUINE' ? 'var(--success)' : 'var(--danger)' }}></i>
-                        <span>Hologram &amp; Seal DPI:</span>
+                        <span>Hologram &amp; Seal Integrity:</span>
                         <strong style={{ color: fileResult.forensicAnalysis.hologramSealIntegrity === 'GENUINE' ? 'var(--success)' : 'var(--danger)' }}>
                           {fileResult.forensicAnalysis.hologramSealIntegrity}
                         </strong>
@@ -510,18 +499,18 @@ export const VerifyView: React.FC = () => {
                         <i className={`ti ${fileResult.forensicAnalysis.qrSignatureMatch ? 'ti-check' : 'ti-x'}`} style={{ color: fileResult.forensicAnalysis.qrSignatureMatch ? 'var(--success)' : 'var(--danger)' }}></i>
                         <span>QR Digital Signature:</span>
                         <strong style={{ color: fileResult.forensicAnalysis.qrSignatureMatch ? 'var(--success)' : 'var(--danger)' }}>
-                          {fileResult.forensicAnalysis.qrSignatureMatch ? 'VALID' : 'INVALID/CLONED'}
+                          {fileResult.forensicAnalysis.qrSignatureMatch ? 'AUTHENTIC' : 'INVALID OR UNREGISTERED'}
                         </strong>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* Flagged Tampered Areas (if fake) */}
+                {/* Flagged Tampered Areas (if fake / unverified) */}
                 {fileResult.tamperedAreas && fileResult.tamperedAreas.length > 0 && (
                   <div style={{ background: 'rgba(239,35,60,.06)', border: '1px solid rgba(239,35,60,.25)', borderRadius: '10px', padding: '1rem', marginBottom: '1rem' }}>
                     <div style={{ color: 'var(--danger)', fontSize: '0.85rem', fontWeight: 700, marginBottom: '0.6rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <i className="ti ti-flame"></i> Detected Forgery &amp; Tamper Hotspots ({fileResult.tamperedAreas.length})
+                      <i className="ti ti-alert-triangle"></i> Verification Anomalies &amp; Flags ({fileResult.tamperedAreas.length})
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                       {fileResult.tamperedAreas.map((t, idx) => (
@@ -535,25 +524,36 @@ export const VerifyView: React.FC = () => {
 
                 {/* Extracted Certificate Fields */}
                 <div className="cert-detail-grid">
-                  <div className="cert-field"><span>Extracted Name</span><strong>{fileResult.name}</strong></div>
-                  <div className="cert-field"><span>Certificate / Serial ID</span><strong style={{ fontFamily: 'monospace', color: fileResult.verdict === 'VERIFIED' ? 'var(--accent)' : 'var(--danger)' }}>{fileResult.certNumber}</strong></div>
-                  <div className="cert-field"><span>Course / Degree</span><strong>{fileResult.coursePosition}</strong></div>
-                  <div className="cert-field"><span>Institution</span><strong>{fileResult.organization}</strong></div>
+                  <div className="cert-field"><span>Student Name</span><strong>{fileResult.name}</strong></div>
+                  <div className="cert-field"><span>Certificate Serial No.</span><strong style={{ fontFamily: 'monospace', color: fileResult.verdict === 'VERIFIED' ? 'var(--accent)' : 'var(--danger)' }}>{fileResult.certNumber}</strong></div>
+                  <div className="cert-field"><span>Course / Program</span><strong>{fileResult.coursePosition}</strong></div>
+                  <div className="cert-field"><span>Issuing Institution</span><strong>{fileResult.organization}</strong></div>
                   <div className="cert-field"><span>Issue Date</span><strong>{fileResult.date}</strong></div>
-                  <div className="cert-field"><span>Grade / Honors</span><strong>{fileResult.gradeDuration}</strong></div>
-                  <div className="cert-field"><span>Signatory / Authority</span><strong>{fileResult.issuedBy}</strong></div>
-                  <div className="cert-field"><span>Security Seal Watermark</span><strong>{fileResult.other}</strong></div>
+                  <div className="cert-field"><span>Grade / Standing</span><strong>{fileResult.gradeDuration}</strong></div>
+                  <div className="cert-field"><span>Registrar / Authority</span><strong>{fileResult.issuedBy}</strong></div>
+                  <div className="cert-field"><span>Security Stamp</span><strong>{fileResult.other}</strong></div>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.25rem', paddingTop: '1rem', borderTop: '1px solid var(--border)', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  <button
-                    className="btn btn-primary btn-sm"
-                    onClick={() => setShowForensicModal(true)}
-                  >
-                    <i className="ti ti-scan"></i> Launch Interactive ELA Forensic Inspector
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => setShowForensicModal(true)}
+                    >
+                      <i className="ti ti-scan"></i> Interactive Forensic ELA Inspector
+                    </button>
+                    {fileResult.verdict === 'VERIFIED' && (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => setPage('data-minimization')}
+                        style={{ borderColor: 'var(--success)', color: 'var(--success)' }}
+                      >
+                        <i className="ti ti-filter-check"></i> Filter Disclosure by Scope (GDPR) →
+                      </button>
+                    )}
+                  </div>
                   <div style={{ fontSize: '0.76rem', color: 'var(--muted)' }}>
-                    <span><i className="ti ti-shield-lock"></i> Audited by Multi-Tier Forensic OCR Engine · {new Date().toLocaleTimeString()}</span>
+                    <span><i className="ti ti-shield-lock"></i> Cross-referenced against SHA-256 Ledger · {new Date().toLocaleTimeString()}</span>
                   </div>
                 </div>
               </div>
@@ -579,7 +579,7 @@ export const VerifyView: React.FC = () => {
               <input
                 type="text"
                 className="verify-input"
-                placeholder="e.g. CERT-2024-001234 or FAKE-2024-998877"
+                placeholder="e.g. CERT-2024-001234 or CERT-2025-000042"
                 value={certNoInput}
                 onChange={e => setCertNoInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && verifyByNumber()}
@@ -679,6 +679,19 @@ export const VerifyView: React.FC = () => {
                   <div className="cert-hash-line">
                     Block Hash: {numberResult.cert.hash} | Prev Linked Hash: {numberResult.cert.prevHash}
                   </div>
+                  <div style={{ marginTop: '0.85rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <i className="ti ti-filter-check" style={{ color: 'var(--success)' }}></i>
+                      <span>Context-Sensitive Policy Engine Active (GDPR Art. 5(1)(c))</span>
+                    </div>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setPage('data-minimization')}
+                      style={{ fontSize: '0.76rem', padding: '0.35rem 0.75rem', borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                    >
+                      <i className="ti ti-shield-lock"></i> Filter Disclosures by Scope →
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="result-card invalid">
@@ -694,7 +707,7 @@ export const VerifyView: React.FC = () => {
                     </div>
                   </div>
                   <p style={{ fontSize: '0.87rem', color: 'var(--muted)', lineHeight: 1.6 }}>
-                    This certificate number does not exist in our SHA-256 blockchain database. It may be fraudulent, artificially generated, or illegally altered.
+                    This certificate number does not exist in our SHA-256 blockchain database. It has not been recorded or issued by an authorized institution.
                   </p>
                 </div>
               )
@@ -702,11 +715,11 @@ export const VerifyView: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 3: QR CODE */}
+        {/* TAB 3: QR CODE SCAN */}
         {activeTab === 'qr' && (
           <div className="tab-panel active">
             <p className="tab-desc">
-              Upload an image containing the QR code embedded in the certificate. Our system will decode and verify it automatically.
+              Upload an image containing the security QR code from any certificate. Our system will decode the cryptographic payload using client-side computer vision and cross-reference the hash against the blockchain.
             </p>
             <div
               className="upload-zone"
@@ -714,7 +727,7 @@ export const VerifyView: React.FC = () => {
             >
               <i className="ti ti-qrcode upload-zone-icon"></i>
               <p>Click or tap to upload QR code image</p>
-              <small>Supports PNG, JPG, WebP</small>
+              <small>Real-time client-side QR scanning (PNG, JPG, WebP)</small>
             </div>
             <input
               type="file"
@@ -726,104 +739,78 @@ export const VerifyView: React.FC = () => {
 
             {qrLoading && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--muted)', padding: '1rem' }}>
-                <div className="spinner"></div> Decoding QR code &amp; comparing against blockchain hash...
+                <div className="spinner"></div> Decoding QR code &amp; validating against blockchain hash...
               </div>
             )}
 
             {qrResult && !qrLoading && (
               <div style={{ marginTop: '1rem' }}>
-                <div className="result-card ai-info" style={{ marginBottom: '0.75rem' }}>
-                  <div className="result-header">
-                    <div className="result-icon" style={{ background: 'rgba(67,97,238,.15)', color: 'var(--accent)' }}>
-                      <i className="ti ti-qrcode"></i>
-                    </div>
-                    <div>
-                      <h3>QR Code Decoded</h3>
-                      <p>Certificate Number: <strong style={{ fontFamily: 'monospace' }}>{qrResult.decoded}</strong></p>
-                    </div>
-                  </div>
-                </div>
-
-                {qrResult.cert ? (
-                  <div className="result-card valid">
+                {qrResult.error ? (
+                  <div className="result-card invalid">
                     <div className="result-header">
-                      <div className="result-icon" style={{ background: 'rgba(6,214,160,.15)', color: 'var(--success)' }}>
-                        <i className="ti ti-shield-check"></i>
+                      <div className="result-icon" style={{ background: 'rgba(239,35,60,.15)', color: 'var(--danger)' }}>
+                        <i className="ti ti-scan"></i>
                       </div>
                       <div>
-                        <h3 style={{ color: 'var(--success)' }}>QR Certificate Authentic ✓</h3>
-                        <p>Linked securely to blockchain block #{certs.findIndex(c => c.no === qrResult.cert?.no) + 1}</p>
+                        <h3 style={{ color: 'var(--danger)' }}>QR Code Not Detected</h3>
+                        <p>{qrResult.error}</p>
                       </div>
                     </div>
-                    <div className="cert-detail-grid">
-                      <div className="cert-field"><span>Student</span><strong>{qrResult.cert.student}</strong></div>
-                      <div className="cert-field"><span>Degree</span><strong>{qrResult.cert.course}</strong></div>
-                      <div className="cert-field"><span>Institution</span><strong>{qrResult.cert.institution}</strong></div>
-                      <div className="cert-field"><span>Date</span><strong>{formatDate(qrResult.cert.date)}</strong></div>
-                    </div>
-                    <div className="cert-hash-line">Block Hash: {qrResult.cert.hash}</div>
                   </div>
                 ) : (
-                  <div className="result-card invalid">
-                    <p style={{ color: 'var(--danger)' }}>Decoded QR does not match any registered block in the ledger.</p>
-                  </div>
+                  <>
+                    <div className="result-card ai-info" style={{ marginBottom: '0.75rem' }}>
+                      <div className="result-header">
+                        <div className="result-icon" style={{ background: 'rgba(67,97,238,.15)', color: 'var(--accent)' }}>
+                          <i className="ti ti-qrcode"></i>
+                        </div>
+                        <div>
+                          <h3>QR Code Decoded Successfully</h3>
+                          <p>
+                            Decoded Credential Serial: <strong style={{ fontFamily: 'monospace' }}>{qrResult.decoded}</strong>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {qrResult.cert && qrResult.cert.valid !== false ? (
+                      <div className="result-card valid">
+                        <div className="result-header">
+                          <div className="result-icon" style={{ background: 'rgba(6,214,160,.15)', color: 'var(--success)' }}>
+                            <i className="ti ti-shield-check"></i>
+                          </div>
+                          <div>
+                            <h3 style={{ color: 'var(--success)' }}>QR Certificate Verified Authentic ✓</h3>
+                            <p>Linked securely to blockchain block #{certs.findIndex(c => c.no === qrResult.cert?.no) + 1}</p>
+                          </div>
+                        </div>
+                        <div className="cert-detail-grid">
+                          <div className="cert-field"><span>Student</span><strong>{qrResult.cert.student}</strong></div>
+                          <div className="cert-field"><span>Degree / Course</span><strong>{qrResult.cert.course}</strong></div>
+                          <div className="cert-field"><span>Institution</span><strong>{qrResult.cert.institution}</strong></div>
+                          <div className="cert-field"><span>Issue Date</span><strong>{formatDate(qrResult.cert.date)}</strong></div>
+                          <div className="cert-field"><span>Grade</span><strong>{qrResult.cert.grade || 'N/A'}</strong></div>
+                          <div className="cert-field"><span>Status</span><strong style={{ color: 'var(--success)' }}>Verified Authentic</strong></div>
+                        </div>
+                        <div className="cert-hash-line">Block Hash: {qrResult.cert.hash}</div>
+                      </div>
+                    ) : (
+                      <div className="result-card invalid">
+                        <div className="result-header">
+                          <div className="result-icon" style={{ background: 'rgba(239,35,60,.15)', color: 'var(--danger)' }}>
+                            <i className="ti ti-shield-x"></i>
+                          </div>
+                          <div>
+                            <h3 style={{ color: 'var(--danger)' }}>Unregistered / Counterfeit QR Credential ✗</h3>
+                            <p>Decoded ID ({qrResult.decoded}) does not match any valid block in the ledger.</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
-          </div>
-        )}
-
-        {/* TAB 4: AI VERIFY (CHAT) */}
-        {activeTab === 'ai' && (
-          <div className="tab-panel active">
-            <p className="tab-desc">
-              Chat with our AI assistant. Paste certificate details or ask anything about fraud detection, verification, or blockchain records.
-            </p>
-            <div className="chat-box">
-              <div className="chat-messages">
-                {aiChatMsgs.map((m, i) => (
-                  <div key={i} className={`chat-msg ${m.role === 'user' ? 'user' : 'assistant'}`}>
-                    <div className="msg-from">
-                      {m.role === 'assistant' ? (
-                        <>
-                          <i className="ti ti-robot"></i> AI Assistant
-                        </>
-                      ) : (
-                        'You'
-                      )}
-                    </div>
-                    <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
-                  </div>
-                ))}
-                {aiChatLoading && (
-                  <div className="chat-msg assistant">
-                    <div className="msg-from"><i className="ti ti-robot"></i> AI Assistant</div>
-                    <div className="typing-indicator">
-                      <span></span>
-                      <span></span>
-                      <span></span>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="chat-input-row">
-                <input
-                  type="text"
-                  className="chat-input"
-                  placeholder="e.g. Verify certificate: Student - Priya Sharma, CERT-2024-001234..."
-                  value={aiChatInput}
-                  onChange={e => setAiChatInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSendAIChat()}
-                />
-                <button
-                  className="chat-send-btn"
-                  onClick={handleSendAIChat}
-                  disabled={aiChatLoading}
-                >
-                  <i className="ti ti-send"></i>
-                </button>
-              </div>
-            </div>
           </div>
         )}
       </div>

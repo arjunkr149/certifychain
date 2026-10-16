@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Certificate, User, VerificationRecord, PageView, Theme, PrivacyRadarSummary } from '../types';
+import { Certificate, User, VerificationRecord, PageView, Theme, PrivacyRadarSummary, DataMinimizationPolicy, VerificationScopeId } from '../types';
 import { randomHash } from '../utils/blockchain';
 import { runAutomatedPrivacyAudit } from '../utils/privacyRadar';
+import { DEFAULT_MINIMIZATION_POLICIES } from '../utils/minimizationPolicy';
 
 export const INITIAL_CERT_DB: Certificate[] = [
   {
@@ -97,6 +98,11 @@ interface AppContextType {
   runPrivacyScan: () => void;
   remediatePrivacyLeaks: () => void;
   remediationApplied: boolean;
+  activeMinimizationScope: VerificationScopeId;
+  setActiveMinimizationScope: (scope: VerificationScopeId) => void;
+  customMinimizationPolicy: DataMinimizationPolicy;
+  setCustomMinimizationPolicy: React.Dispatch<React.SetStateAction<DataMinimizationPolicy>>;
+  getMinimizationPolicy: (scopeId: VerificationScopeId) => DataMinimizationPolicy;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -109,7 +115,8 @@ const VALID_PAGES: PageView[] = [
   'issue',
   'blockchain',
   'privacy-radar',
-  'ai-assistant',
+  'zkp-studio',
+  'data-minimization',
   'profile',
 ];
 
@@ -129,27 +136,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTheme(t => (t === 'dark' ? 'light' : 'dark'));
   };
 
-  // User auth state
+  // User auth state: Starts logged OUT. No automatic login.
   const [user, setUser] = useState<User | null>(() => {
-    const token = localStorage.getItem('cc_token');
-    if (!token) return null;
-    const stored = localStorage.getItem('cc_user');
-    return stored ? JSON.parse(stored) : {
-      username: 'admin',
-      name: 'Arjun Kumar',
-      email: 'aksir648@gmail.com',
-      institution: 'GNIOT, Greater Noida'
-    };
+    const sessionUserStr = sessionStorage.getItem('cc_active_user');
+    if (!sessionUserStr) return null;
+    try {
+      return JSON.parse(sessionUserStr);
+    } catch {
+      return null;
+    }
   });
 
-  // Navigation page
+  // Navigation page: Defaults to 'home', never jumps to 'dashboard' automatically
   const [page, setPageState] = useState<PageView>(() => {
     const hash = window.location.hash.replace('#', '') as PageView;
     if (VALID_PAGES.includes(hash)) {
+      // If user is not logged in and requested an admin-only page, route to login or home
+      const adminOnlyPages: PageView[] = ['dashboard', 'issue', 'profile'];
+      const sessionUserStr = sessionStorage.getItem('cc_active_user');
+      if (adminOnlyPages.includes(hash) && !sessionUserStr) {
+        return 'login';
+      }
       return hash;
     }
-    const token = localStorage.getItem('cc_token');
-    return token ? 'dashboard' : 'home';
+    return 'home';
   });
 
   const setPage = (p: PageView) => {
@@ -300,11 +310,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         phone: '+91-6386416463',
         institution: 'GNIOT, Greater Noida',
       };
-      localStorage.setItem('cc_token', 'demo-token-' + Date.now());
-      localStorage.setItem('cc_user', JSON.stringify(u));
+      sessionStorage.setItem('cc_active_user', JSON.stringify(u));
       setUser(u);
       setPage('dashboard');
-      showToast('Welcome back, Arjun!', 'success');
+      showToast('Welcome back, Admin!', 'success');
       return true;
     }
     const savedUserStr = localStorage.getItem('cc_registered_user');
@@ -312,8 +321,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (savedUserStr) {
       const savedUser: User = JSON.parse(savedUserStr);
       if (savedUser.username === username && pass === savedPass) {
-        localStorage.setItem('cc_token', 'demo-token-' + Date.now());
-        localStorage.setItem('cc_user', JSON.stringify(savedUser));
+        sessionStorage.setItem('cc_active_user', JSON.stringify(savedUser));
         setUser(savedUser);
         setPage('dashboard');
         showToast(`Welcome back, ${savedUser.name}!`, 'success');
@@ -326,16 +334,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const register = (newUser: User, pass: string) => {
     localStorage.setItem('cc_password', pass);
     localStorage.setItem('cc_registered_user', JSON.stringify(newUser));
-    localStorage.setItem('cc_token', 'demo-token-' + Date.now());
-    localStorage.setItem('cc_user', JSON.stringify(newUser));
+    sessionStorage.setItem('cc_active_user', JSON.stringify(newUser));
     setUser(newUser);
     setPage('dashboard');
     showToast('Account created successfully!', 'success');
   };
 
   const logout = () => {
-    localStorage.removeItem('cc_token');
+    sessionStorage.removeItem('cc_active_user');
     sessionStorage.removeItem('cc_session_certs');
+    localStorage.removeItem('cc_token');
+    localStorage.removeItem('cc_user');
     setUser(null);
     setPage('login');
     showToast('Logged out successfully.', 'success');
@@ -357,6 +366,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('cc_password', next);
     showToast('Password changed successfully!', 'success');
     return true;
+  };
+
+  // Data Minimization Policy Engine state
+  const [activeMinimizationScope, setActiveMinimizationScope] = useState<VerificationScopeId>('employment');
+  const [customMinimizationPolicy, setCustomMinimizationPolicy] = useState<DataMinimizationPolicy>(
+    DEFAULT_MINIMIZATION_POLICIES.custom
+  );
+
+  const getMinimizationPolicy = (scopeId: VerificationScopeId): DataMinimizationPolicy => {
+    if (scopeId === 'custom') {
+      return customMinimizationPolicy;
+    }
+    return DEFAULT_MINIMIZATION_POLICIES[scopeId] || DEFAULT_MINIMIZATION_POLICIES.employment;
   };
 
   return (
@@ -387,6 +409,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         runPrivacyScan,
         remediatePrivacyLeaks,
         remediationApplied,
+        activeMinimizationScope,
+        setActiveMinimizationScope,
+        customMinimizationPolicy,
+        setCustomMinimizationPolicy,
+        getMinimizationPolicy,
       }}
     >
       {children}

@@ -52,14 +52,24 @@ export const LandingPage: React.FC = () => {
           </p>
           <div className="hero-btns">
             <button
-              onClick={() => setPage('login')}
+              onClick={() => setPage('verify')}
               className="btn btn-primary btn-lg"
+            >
+              <i className="ti ti-shield-check"></i> Verify Certificate
+            </button>
+            <button
+              onClick={() => setPage('login')}
+              className="btn btn-ghost btn-lg"
             >
               <i className="ti ti-login"></i> Admin Login
             </button>
-            <a href="#features" className="btn btn-ghost btn-lg">
-              <i className="ti ti-arrow-down"></i> Learn More
-            </a>
+            <button
+              onClick={() => setPage('privacy-radar')}
+              className="btn btn-ghost btn-lg"
+              style={{ color: 'var(--success)', borderColor: 'rgba(6,214,160,0.4)' }}
+            >
+              <i className="ti ti-radar"></i> Privacy Radar
+            </button>
           </div>
           <div className="hero-stats">
             <div className="hero-stat">
@@ -201,28 +211,7 @@ export const LandingPage: React.FC = () => {
         </div>
       </section>
 
-      {/* TEAM SECTION */}
-      <section id="team" className="team-section">
-        <div className="container">
-          <h2 className="section-title">Made By</h2>
-          <p className="section-sub">Built with passion and dedication</p>
-          <div className="team-grid">
-            <div className="team-card">
-              <div className="team-avatar">AK</div>
-              <h4>Arjun Kumar</h4>
-              <p>Lead Developer</p>
-              <div className="team-links">
-                <a href="https://github.com/arjunkr149" target="_blank" rel="noreferrer">
-                  <i className="ti ti-brand-github"></i>
-                </a>
-                <a href="mailto:aurevia69@gmail.com">
-                  <i className="ti ti-mail"></i>
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+
 
       {/* FAQ SECTION */}
       <section id="faq" className="faq-section">
@@ -404,7 +393,8 @@ export const LandingPage: React.FC = () => {
                 <li><a onClick={() => setPage('home')} style={{ cursor: 'pointer' }}>Home</a></li>
                 <li><a onClick={() => setPage('verify')} style={{ cursor: 'pointer' }}>Verify Certificate</a></li>
                 <li><a onClick={() => setPage('blockchain')} style={{ cursor: 'pointer' }}>Blockchain Explorer</a></li>
-                <li><a onClick={() => setPage('ai-assistant')} style={{ cursor: 'pointer' }}>AI Assistant</a></li>
+                <li><a onClick={() => setPage('privacy-radar')} style={{ cursor: 'pointer' }}>Privacy Radar</a></li>
+                <li><a onClick={() => setPage('data-minimization')} style={{ cursor: 'pointer' }}>Policy Engine</a></li>
               </ul>
             </div>
             <div>
@@ -425,7 +415,7 @@ export const LandingPage: React.FC = () => {
             </div>
           </div>
           <div className="footer-credit">
-            © {new Date().getFullYear()} CertifyChain. Developed by Arjun Kumar. All rights reserved.
+            © {new Date().getFullYear()} CertifyChain. Cryptographic Certificate Verification Platform. All rights reserved.
           </div>
         </div>
       </footer>

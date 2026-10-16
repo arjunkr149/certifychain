@@ -27,6 +27,13 @@ export const DashboardOverview: React.FC = () => {
             <i className="ti ti-shield-check"></i> Quick Verify
           </button>
           <button
+            onClick={() => setPage('data-minimization')}
+            className="btn btn-ghost"
+            style={{ borderColor: 'rgba(67,97,238,.4)', color: 'var(--accent)' }}
+          >
+            <i className="ti ti-filter-check"></i> Policy Engine
+          </button>
+          <button
             onClick={() => setPage('privacy-radar')}
             className="btn btn-ghost"
             style={{ borderColor: 'rgba(6,214,160,.3)', color: 'var(--success)' }}
@@ -172,9 +179,9 @@ export const DashboardOverview: React.FC = () => {
             <i className="ti ti-radar" style={{ color: 'var(--success)' }}></i>
             <span>Privacy Radar</span>
           </div>
-          <div className="action-card" onClick={() => setPage('ai-assistant')}>
-            <i className="ti ti-robot"></i>
-            <span>AI Fraud Assistant</span>
+          <div className="action-card" onClick={() => setPage('data-minimization')}>
+            <i className="ti ti-filter-check" style={{ color: 'var(--accent)' }}></i>
+            <span>Policy Engine</span>
           </div>
         </div>
       </div>

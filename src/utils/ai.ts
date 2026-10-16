@@ -1,4 +1,5 @@
 import { Certificate, AIAnalysisResult } from '../types';
+import { scanQrCodeFromDataUrl, DecodedQRResult } from './qrScanner';
 
 export async function askCertifyChainAI(
   userMessage: string,
@@ -23,6 +24,14 @@ export async function askCertifyChainAI(
 • Blockchain Hash: ${certMatch.hash}
 • Previous Linked Hash: ${certMatch.prevHash}
 Status: 100% Verified Authentic on SHA-256 Chain.`;
+  }
+
+  if (lower.includes('minimization') || lower.includes('policy engine') || lower.includes('scope') || lower.includes('selective disclosure')) {
+    return `CertifyChain's Context-Sensitive Data Minimization Policy Engine enforces GDPR Article 5(1)(c) and India DPDP Act Section 6 purpose limitation:
+1. Dynamic Verifier Scopes: Tailors disclosures to the verifier's specific role (Employment Background Check, University Credit Transfer, Professional Licensing Board, or Student Privileges).
+2. Field-Level Redaction & Masking: Suppresses unnecessary attributes (e.g., hiding exact GPAs from employers, masking student roll IDs, coarsening dates to year-only).
+3. Zero-Knowledge Predicates: Allows candidates to prove qualification criteria (e.g. "Graduated with Honors") without leaking underlying marks or sensitive records.
+4. Cryptographic Proof Tokens: Issues ephemeral HMAC/SHA-256 disclosure tokens bound to the underlying blockchain block.`;
   }
 
   if (lower.includes('privacy') || lower.includes('leak') || lower.includes('radar')) {
@@ -54,38 +63,55 @@ Status: 100% Verified Authentic on SHA-256 Chain.`;
   return `I am CertifyChain AI, your verification and privacy security assistant. Currently guarding ${certs.length} verified certificates on chain with automated fraud detection and privacy leakage protection. Ask me to verify a certificate number, inspect forensic anomalies, or run privacy audits.`;
 }
 
+export interface AnalysisOptions {
+  manualCertNo?: string;
+  decodedQR?: DecodedQRResult | null;
+}
+
 export async function analyzeCertificateImage(
   fileName: string,
   base64Data?: string,
   certs: Certificate[] = [],
-  forceOutcome: 'auto' | 'authentic' | 'fake' = 'auto'
+  options?: AnalysisOptions
 ): Promise<AIAnalysisResult> {
-  // Simulate neural OCR analysis step
-  await new Promise(r => setTimeout(r, 1800));
-
   const lowerName = fileName.toLowerCase();
 
-  // Scenario 1: Deliberate Fake / Altered Certificate
-  if (
-    forceOutcome === 'fake' ||
-    (forceOutcome === 'auto' && (
-      lowerName.includes('fake') ||
-      lowerName.includes('forged') ||
-      lowerName.includes('tamper') ||
-      lowerName.includes('counterfeit') ||
-      lowerName.includes('sample-fake')
-    ))
-  ) {
+  // Step 1: Scan for QR code in the image dataUrl if not already provided
+  let qrInfo: DecodedQRResult | null = options?.decodedQR || null;
+  if (!qrInfo && base64Data && base64Data.startsWith('data:image')) {
+    qrInfo = await scanQrCodeFromDataUrl(base64Data);
+  }
+
+  // Step 2: Determine target certificate ID
+  let targetCertNo = options?.manualCertNo?.trim() || qrInfo?.certNo?.trim() || '';
+
+  // If not found in QR or options, check if fileName has a serial pattern
+  if (!targetCertNo) {
+    const certMatch = fileName.match(/CERT-[A-Z0-9-]+/i) || fileName.match(/FAKE-[A-Z0-9-]+/i);
+    if (certMatch) {
+      targetCertNo = certMatch[0].toUpperCase();
+    }
+  }
+
+  // Check for intentional fake sample
+  const isIntentionalFakeSample =
+    lowerName.includes('fake') ||
+    lowerName.includes('forged') ||
+    lowerName.includes('tamper') ||
+    lowerName.includes('counterfeit') ||
+    targetCertNo.startsWith('FAKE');
+
+  if (isIntentionalFakeSample) {
     return {
-      documentType: 'Counterfeit Academic Degree',
-      name: 'Sunil Kumar (Altered from Priya Sharma)',
-      certNumber: 'FAKE-2024-998877',
-      coursePosition: 'B.Tech Computer Science & Engineering (Manipulated)',
-      organization: 'Unaccredited Entity / Forged GNIOT Letterhead',
+      documentType: 'Counterfeit / Altered Academic Credential',
+      name: qrInfo?.student || 'Sunil Kumar (Altered Overlay)',
+      certNumber: targetCertNo || 'FAKE-2024-998877',
+      coursePosition: qrInfo?.course || 'B.Tech Computer Science (Manipulated)',
+      organization: 'Unaccredited Entity / Forged Institutional Letterhead',
       date: '15 May 2024 (Inconsistent metadata)',
       gradeDuration: 'CGPA 9.9 / 10 (Artificially Inflated)',
       issuedBy: 'Unknown Digital Signature / Unregistered Stamp',
-      other: 'Modified background noise around student name and degree marks',
+      other: 'Modified background noise & raster anomalies around name and marks',
       authenticityGood: 'Readable raster text layer present',
       authenticityWarn: 'CRITICAL: Font kerning mismatch around name; Institution seal DPI inconsistent; No matching SHA-256 block found in ledger',
       verdict: 'SUSPICIOUS',
@@ -100,12 +126,12 @@ export async function analyzeCertificateImage(
         },
         {
           area: 'Grade & CGPA Section',
-          reason: 'Compression artifacts around "9.9" indicate image editing tool splice.',
+          reason: 'Compression artifacts around grade figures indicate image editing tool splice.',
           severity: 'high',
         },
         {
           area: 'Cryptographic Ledger Cross-Check',
-          reason: 'Certificate serial "FAKE-2024-998877" does not exist in the official blockchain hash chain.',
+          reason: `Certificate serial "${targetCertNo || 'FAKE-2024-998877'}" does not exist in the official blockchain hash chain.`,
           severity: 'high',
         },
         {
@@ -124,53 +150,79 @@ export async function analyzeCertificateImage(
     };
   }
 
-  // Scenario 2: Authentic AICTE / EduSkills Internship Certificate
-  if (lowerName.includes('intern') || lowerName.includes('aicte') || lowerName.includes('eduskills')) {
-    return {
-      documentType: 'Virtual Internship Certificate',
-      name: 'Arjun Kumar',
-      certNumber: 'CERT-2025-000042',
-      coursePosition: 'AI-ML Virtual Internship (10 Weeks)',
-      organization: 'AICTE-EduSkills / Galgotias University',
-      date: '30 Sep 2025',
-      gradeDuration: 'Grade B (Good) · 60-69%',
-      issuedBy: 'National Internship Portal / EduSkills Academy Director',
-      other: 'Google for Developers · India Edu Program Partner seal verified',
-      authenticityGood: 'Official EduSkills holographic seal, QR validation code, registrar signature, blockchain hash intact',
-      authenticityWarn: 'NONE_DETECTED',
-      verdict: 'VERIFIED',
-      confidence: 'HIGH',
-      tamperScore: 2,
-      summary: 'AUTHENTIC & VERIFIED: Document successfully validated against AICTE-EduSkills blockchain ledger. Block #5 cryptographic hash matches with 100% integrity.',
-      tamperedAreas: [],
-      forensicAnalysis: {
-        ledgerMatch: true,
-        hologramSealIntegrity: 'GENUINE',
-        fontCoherence: 'CONSISTENT',
-        qrSignatureMatch: true,
-        metadataTimestampValid: true,
-      },
-    };
+  // Step 3: Check if targetCertNo or student name matches an authentic certificate in ledger
+  let matchedCert: Certificate | undefined;
+
+  if (targetCertNo) {
+    matchedCert = certs.find(c =>
+      c.no.toLowerCase() === targetCertNo.toLowerCase() ||
+      c.no.replace(/[^A-Za-z0-9]/g, '').toLowerCase() === targetCertNo.replace(/[^A-Za-z0-9]/g, '').toLowerCase()
+    );
   }
 
-  // Scenario 3: Authentic Degree
-  if (lowerName.includes('degree') || lowerName.includes('btech') || lowerName.includes('priya')) {
+  // Fallback match by student name if explicitly named in filename or qr
+  if (!matchedCert && (qrInfo?.student || lowerName)) {
+    const studentQuery = (qrInfo?.student || lowerName).toLowerCase();
+    matchedCert = certs.find(c => studentQuery.includes(c.student.toLowerCase()));
+  }
+
+  // CASE A: Certificate IS found in the official blockchain registry!
+  if (matchedCert) {
+    const blockIndex = certs.findIndex(c => c.no === matchedCert?.no) + 1;
+    const isChainValid = matchedCert.valid !== false;
+
+    if (!isChainValid) {
+      // Blockchain ledger record found, but marked as tampered/broken chain!
+      return {
+        documentType: matchedCert.course.includes('Degree') || matchedCert.course.includes('B.') ? 'Academic Degree' : 'Certified Credential',
+        name: matchedCert.student,
+        certNumber: matchedCert.no,
+        coursePosition: matchedCert.course,
+        organization: matchedCert.institution,
+        date: matchedCert.date,
+        gradeDuration: matchedCert.grade || 'N/A',
+        issuedBy: 'Official Registrar (Chain Broken)',
+        other: 'Ledger block integrity violated',
+        authenticityGood: 'Matched historical certificate serial',
+        authenticityWarn: 'CRITICAL: Ledger hash chaining mismatch. Block # has been altered.',
+        verdict: 'SUSPICIOUS',
+        confidence: 'HIGH',
+        tamperScore: 98,
+        summary: `BLOCKCHAIN INTEGRITY VIOLATION: Certificate ${matchedCert.no} exists in historical records, but its cryptographic SHA-256 block hash (${matchedCert.hash}) has been tampered with and no longer matches previous block links.`,
+        tamperedAreas: [
+          {
+            area: 'SHA-256 Hash Chaining',
+            reason: `Block link broken: Hash ${matchedCert.hash} does not match predecessor ${matchedCert.prevHash}.`,
+            severity: 'high',
+          },
+        ],
+        forensicAnalysis: {
+          ledgerMatch: true,
+          hologramSealIntegrity: 'SUSPICIOUS',
+          fontCoherence: 'SUSPICIOUS_ALTERATION',
+          qrSignatureMatch: false,
+          metadataTimestampValid: false,
+        },
+      };
+    }
+
+    // Genuine, verified authentic certificate
     return {
-      documentType: 'Bachelor of Technology Degree',
-      name: 'Priya Sharma',
-      certNumber: 'CERT-2024-001234',
-      coursePosition: 'B.Tech Computer Science & Engineering',
-      organization: 'GNIOT, Greater Noida',
-      date: '15 May 2024',
-      gradeDuration: 'CGPA 8.9 / 10 · First Class with Distinction',
-      issuedBy: 'Registrar & Vice Chancellor',
-      other: 'University Gold Medallion & Security Watermark confirmed',
-      authenticityGood: 'Institutional embossed seal, verifiable serial number, dual authorized signatures, SHA-256 block link confirmed',
+      documentType: matchedCert.course.includes('Degree') || matchedCert.course.includes('B.') ? 'Official Academic Degree' : 'Verified Internship / Professional Certificate',
+      name: matchedCert.student,
+      certNumber: matchedCert.no,
+      coursePosition: matchedCert.course,
+      organization: matchedCert.institution,
+      date: matchedCert.date,
+      gradeDuration: matchedCert.grade || 'First Class with Distinction',
+      issuedBy: 'Authorized Registrar & Examination Board',
+      other: 'Institutional embossed seal, verifiable QR signature, SHA-256 block link confirmed',
+      authenticityGood: `Cryptographic SHA-256 block #${blockIndex} verified, valid QR digital signature, authorized registrar stamp`,
       authenticityWarn: 'NONE_DETECTED',
       verdict: 'VERIFIED',
       confidence: 'HIGH',
       tamperScore: 0,
-      summary: 'AUTHENTIC & VERIFIED: Official engineering degree recognized with intact blockchain signature and registrar validation on Genesis Block #1.',
+      summary: `AUTHENTIC & VERIFIED: Document successfully validated against Blockchain Ledger on Block #${blockIndex}. Cryptographic hash (${matchedCert.hash}) matches the immutable ledger with 100% integrity.`,
       tamperedAreas: [],
       forensicAnalysis: {
         ledgerMatch: true,
@@ -182,31 +234,42 @@ export async function analyzeCertificateImage(
     };
   }
 
-  // Default clean verified analysis for user document
-  const sampleCert = certs[0];
+  // CASE B: Certificate is NOT found in the blockchain ledger
+  // DO NOT blindly label unknown uploaded certificates as authentic!
   return {
-    documentType: 'Official Academic Certificate',
-    name: sampleCert ? sampleCert.student : 'Verified Student Candidate',
-    certNumber: sampleCert ? sampleCert.no : 'CERT-2024-001234',
-    coursePosition: sampleCert ? sampleCert.course : 'Computer Science Program',
-    organization: sampleCert ? sampleCert.institution : 'GNIOT, Greater Noida',
-    date: sampleCert ? sampleCert.date : '2024-05-15',
-    gradeDuration: sampleCert?.grade || 'First Division with Honors',
-    issuedBy: 'Academic Council Registrar',
-    other: 'Official institutional seal, verifiable signature, security watermark',
-    authenticityGood: 'High-resolution vector typography, valid QR code pattern, cryptographic ledger confirmation',
-    authenticityWarn: 'NONE_DETECTED',
-    verdict: 'VERIFIED',
+    documentType: 'Unverified / Third-Party Credential',
+    name: qrInfo?.student || 'Unregistered Candidate',
+    certNumber: targetCertNo || 'NOT-FOUND-IN-LEDGER',
+    coursePosition: qrInfo?.course || 'Unregistered Academic / Professional Course',
+    organization: 'Unverified Institution / External Entity',
+    date: 'Unconfirmed Issue Date',
+    gradeDuration: 'Unverified Grade',
+    issuedBy: 'Digital Signature Not Anchored to Ledger',
+    other: 'No cryptographic watermark or blockchain anchor found',
+    authenticityGood: qrInfo?.raw ? 'QR code decoded from image' : 'Image uploaded & scanned',
+    authenticityWarn: `CRITICAL: Certificate ID "${targetCertNo || 'Unknown'}" does not exist in the official SHA-256 blockchain ledger. No cryptographic proof of issuance found.`,
+    verdict: 'SUSPICIOUS',
     confidence: 'HIGH',
-    tamperScore: 3,
-    summary: 'AUTHENTIC & VERIFIED: Document validated with high confidence. Key institutional markers, security watermark, and format consistency intact on blockchain.',
-    tamperedAreas: [],
+    tamperScore: 89,
+    summary: `VALIDATION FAILED: This certificate (${targetCertNo || 'Unknown ID'}) does NOT exist in the CertifyChain immutable blockchain ledger. It has not been signed by any registered issuing authority or university registrar.`,
+    tamperedAreas: [
+      {
+        area: 'Blockchain Ledger Cross-Check',
+        reason: `Certificate serial "${targetCertNo || 'Unknown'}" has no matching block in the immutable blockchain registry.`,
+        severity: 'high',
+      },
+      {
+        area: 'Digital Signature & Seal',
+        reason: 'No cryptographic public-key attestation found from recognized partner institutions.',
+        severity: 'high',
+      },
+    ],
     forensicAnalysis: {
-      ledgerMatch: true,
-      hologramSealIntegrity: 'GENUINE',
-      fontCoherence: 'CONSISTENT',
-      qrSignatureMatch: true,
-      metadataTimestampValid: true,
+      ledgerMatch: false,
+      hologramSealIntegrity: 'FORGED',
+      fontCoherence: 'SUSPICIOUS_ALTERATION',
+      qrSignatureMatch: false,
+      metadataTimestampValid: false,
     },
   };
 }

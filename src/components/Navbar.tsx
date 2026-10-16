@@ -38,13 +38,13 @@ export const Navbar: React.FC = () => {
             </a>
           </li>
           <li>
-            <a onClick={() => scrollToSection('features')} style={{ cursor: 'pointer' }}>
-              Features
+            <a onClick={() => setPage('verify')} style={{ cursor: 'pointer', color: 'var(--accent)', fontWeight: 600 }}>
+              Verify Certificate
             </a>
           </li>
           <li>
-            <a onClick={() => scrollToSection('about')} style={{ cursor: 'pointer' }}>
-              About
+            <a onClick={() => scrollToSection('features')} style={{ cursor: 'pointer' }}>
+              Features
             </a>
           </li>
           <li>
@@ -55,11 +55,6 @@ export const Navbar: React.FC = () => {
           <li>
             <a onClick={() => scrollToSection('faq')} style={{ cursor: 'pointer' }}>
               FAQ
-            </a>
-          </li>
-          <li>
-            <a onClick={() => scrollToSection('contact')} style={{ cursor: 'pointer' }}>
-              Contact
             </a>
           </li>
         </ul>
@@ -89,16 +84,16 @@ export const Navbar: React.FC = () => {
           ) : (
             <>
               <button
-                onClick={() => setPage('login')}
+                onClick={() => setPage('verify')}
                 className="btn btn-ghost"
               >
-                Login
+                <i className="ti ti-shield-check"></i> Verify
               </button>
               <button
                 onClick={() => setPage('login')}
                 className="btn btn-primary"
               >
-                Get Started
+                <i className="ti ti-login"></i> Admin Login
               </button>
             </>
           )}

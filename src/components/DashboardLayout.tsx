@@ -7,7 +7,7 @@ import { IssueView } from './views/IssueView';
 import { BlockchainView } from './views/BlockchainView';
 import { PrivacyRadarView } from './views/PrivacyRadarView';
 import { ZKPStudioView } from './views/ZKPStudioView';
-import { AIAssistantView } from './views/AIAssistantView';
+import { DataMinimizationView } from './views/DataMinimizationView';
 import { ProfileView } from './views/ProfileView';
 
 export const DashboardLayout: React.FC = () => {
@@ -28,12 +28,12 @@ export const DashboardLayout: React.FC = () => {
         return 'Privacy Leakage Radar & Automated Testing';
       case 'zkp-studio':
         return 'Zero-Knowledge Proof Studio & Selective Disclosure';
-      case 'ai-assistant':
-        return 'AI Assistant';
+      case 'data-minimization':
+        return 'Context-Sensitive Data Minimization Policy Engine';
       case 'profile':
         return 'Profile';
       default:
-        return 'Dashboard';
+        return 'CertifyChain';
     }
   };
 
@@ -58,24 +58,28 @@ export const DashboardLayout: React.FC = () => {
         </div>
 
         <nav className="sidebar-nav">
-          <div
-            className={`nav-item ${page === 'dashboard' ? 'active' : ''}`}
-            onClick={() => navTo('dashboard')}
-          >
-            <i className="ti ti-layout-dashboard"></i> Dashboard
-          </div>
+          {user && (
+            <div
+              className={`nav-item ${page === 'dashboard' ? 'active' : ''}`}
+              onClick={() => navTo('dashboard')}
+            >
+              <i className="ti ti-layout-dashboard"></i> Dashboard
+            </div>
+          )}
           <div
             className={`nav-item ${page === 'verify' ? 'active' : ''}`}
             onClick={() => navTo('verify')}
           >
             <i className="ti ti-shield-check"></i> Verify Certificate
           </div>
-          <div
-            className={`nav-item ${page === 'issue' ? 'active' : ''}`}
-            onClick={() => navTo('issue')}
-          >
-            <i className="ti ti-upload"></i> Issue Certificate
-          </div>
+          {user && (
+            <div
+              className={`nav-item ${page === 'issue' ? 'active' : ''}`}
+              onClick={() => navTo('issue')}
+            >
+              <i className="ti ti-upload"></i> Issue Certificate
+            </div>
+          )}
           <div
             className={`nav-item ${page === 'blockchain' ? 'active' : ''}`}
             onClick={() => navTo('blockchain')}
@@ -128,21 +132,38 @@ export const DashboardLayout: React.FC = () => {
             <i className="ti ti-lock-access" style={{ color: 'var(--accent)' }}></i> ZK Proof Studio
           </div>
 
+          {/* CONTEXT-SENSITIVE DATA MINIMIZATION POLICY ENGINE */}
           <div
-            className={`nav-item ${page === 'ai-assistant' ? 'active' : ''}`}
-            onClick={() => navTo('ai-assistant')}
+            className={`nav-item ${page === 'data-minimization' ? 'active' : ''}`}
+            onClick={() => navTo('data-minimization')}
+            style={{ position: 'relative' }}
           >
-            <i className="ti ti-robot"></i> AI Assistant
+            <i className="ti ti-filter-check" style={{ color: 'var(--success)' }}></i>
+            <span style={{ flex: 1 }}>Policy Engine</span>
+            <span
+              style={{
+                background: 'rgba(67,97,238,.2)',
+                color: 'var(--accent)',
+                fontSize: '0.68rem',
+                padding: '1px 6px',
+                borderRadius: '10px',
+                fontWeight: 700,
+              }}
+            >
+              GDPR
+            </span>
           </div>
 
           <div className="sidebar-sep"></div>
 
-          <div
-            className={`nav-item ${page === 'profile' ? 'active' : ''}`}
-            onClick={() => navTo('profile')}
-          >
-            <i className="ti ti-user-circle"></i> Profile
-          </div>
+          {user && (
+            <div
+              className={`nav-item ${page === 'profile' ? 'active' : ''}`}
+              onClick={() => navTo('profile')}
+            >
+              <i className="ti ti-user-circle"></i> Profile &amp; Settings
+            </div>
+          )}
 
           <div
             className="nav-item"
@@ -154,20 +175,37 @@ export const DashboardLayout: React.FC = () => {
         </nav>
 
         <div className="sidebar-footer">
-          <div
-            className="sidebar-user"
-            onClick={() => navTo('profile')}
-            style={{ cursor: 'pointer' }}
-          >
-            <div className="user-avatar">{initial}</div>
-            <div>
-              <div className="user-name">{user?.name || user?.username || 'Admin'}</div>
-              <div className="user-role">Super Admin</div>
+          {user ? (
+            <>
+              <div
+                className="sidebar-user"
+                onClick={() => navTo('profile')}
+                style={{ cursor: 'pointer' }}
+              >
+                <div className="user-avatar">{initial}</div>
+                <div>
+                  <div className="user-name">{user.name || user.username}</div>
+                  <div className="user-role">Institutional Admin</div>
+                </div>
+              </div>
+              <button className="logout-btn" onClick={logout}>
+                <i className="ti ti-logout"></i> Logout
+              </button>
+            </>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', width: '100%' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <i className="ti ti-shield-check"></i> Public Verifier Access
+              </div>
+              <button
+                className="btn btn-primary btn-sm"
+                style={{ width: '100%', justifyContent: 'center' }}
+                onClick={() => setPage('login')}
+              >
+                <i className="ti ti-login"></i> Admin Login
+              </button>
             </div>
-          </div>
-          <button className="logout-btn" onClick={logout}>
-            <i className="ti ti-logout"></i> Logout
-          </button>
+          )}
         </div>
       </aside>
 
@@ -194,9 +232,19 @@ export const DashboardLayout: React.FC = () => {
             >
               <span className="dot"></span> Privacy Shield: {privacySummary.overallScore}%
             </span>
-            <span className="topbar-user">
-              @{user?.username || 'admin'}
-            </span>
+            {user ? (
+              <span className="topbar-user">
+                @{user.username}
+              </span>
+            ) : (
+              <button
+                onClick={() => setPage('login')}
+                className="btn btn-primary btn-sm"
+                style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem' }}
+              >
+                <i className="ti ti-login"></i> Login
+              </button>
+            )}
             <button
               className="theme-toggle"
               onClick={toggleTheme}
@@ -219,7 +267,7 @@ export const DashboardLayout: React.FC = () => {
         {page === 'blockchain' && <BlockchainView />}
         {page === 'privacy-radar' && <PrivacyRadarView />}
         {page === 'zkp-studio' && <ZKPStudioView />}
-        {page === 'ai-assistant' && <AIAssistantView />}
+        {page === 'data-minimization' && <DataMinimizationView />}
         {page === 'profile' && <ProfileView />}
       </main>
     </div>
